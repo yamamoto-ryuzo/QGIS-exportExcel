@@ -10,11 +10,7 @@
     レイヤ変数に以下の定義をしていおく必要があります。
       xlsout_template_path -- Excelテンプレートブックファイルパス
       xlsout_output_path_fixed -- 帳票出力先ディレクトリパス（必ず存在する必要があります）
-      xlsout_output_path_variable -- xlsout_output_path_fixedで指定したディレクトリの下に作成する動的作成するディレクトリ名。
-                                     ・QGISで使用できる関数を指定可能
-                                     ・文字列はシングルクォーテーションで括る
-                                     ・対象地物のフィールド名はダブルクォーテーションで括る
-                                     ・パス区切り文字に\を使用する際は\\とする
+      xlsout_output_path_variable -- 出力するファイル名となる地物の属性名
  ***************************************************************************/
 """
 
@@ -29,7 +25,7 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
 from PyQt5.QtWidgets import QAction, QMessageBox, QApplication
 
 # mmへ単位変換する際に使用
@@ -41,12 +37,15 @@ unit_for_mm = {
     QgsUnitTypes.DistanceYards: 914.4,
     QgsUnitTypes.DistanceMiles: 1609344,
     QgsUnitTypes.DistanceCentimeters: 10,
-    QgsUnitTypes.DistanceMillimeters: 1,
+    QgsUnitTypes.DistanceMillimeters: 1
 }
+
 # レイヤ変数定義
 TEMPLATE_PATH = "xlsout_template_path"
 OUTPUT_PATH_FIXED = "xlsout_output_path_fixed"
 OUTPUT_PATH_VARIABLE = "xlsout_output_path_variable"
+
+DEFAULT_CRS = 30167 # 7系
 
 def get_layer_variable(layer_context_name: str, layer: QgsVectorLayer):
     """
@@ -182,7 +181,19 @@ def append_attach(ws, cell, attach_list: list):
             "address": cell.Address,
         }
         if feature.fieldNameIndex(attach_info[1]) >= 0:
-            text_info["text"] = feature.attribute(attach_info[1])
+            # 2023.1.19 QDateエラー修正 start
+            # text_info["text"] = feature.attribute(attach_info[1])
+            _val = feature.attribute(attach_info[1])
+            # Excelでエラーに型は文字列に変換する（対象の型：QDate,QTime,QDateTime）
+            if isinstance(_val, QDate):
+                text_info["text"] = _val.toString("yyyy/MM/dd")
+            elif isinstance(_val, QTime):
+                text_info["text"] = _val.toString() # フォーマットは不要
+            elif isinstance(_val, QDateTime):
+                text_info["text"] = _val.toString("yyyy/MM/dd hh:mm:ss")
+            else:
+                text_info["text"] = _val
+            # 2023.1.19 QDateエラー修正 end
         else:
             text_info["text"] = ""
         attach_list.append(text_info)
@@ -356,7 +367,6 @@ def create_map_images(image_dict: dict, dpi: int):
     temp_theme_name = add_temp_theme_from_current_state()
 
     # テーマを切り替えながら地図画像を作成する
-    current_theme = ""
     current_scale = 0
     
     for key in key_sorted:
@@ -366,22 +376,24 @@ def create_map_images(image_dict: dict, dpi: int):
         map_width = float(key_split[2])
         map_height = float(key_split[3])
 
-        if current_theme != theme_name:
-            # テーマを変更する
-            change_theme(theme_name)
+        # テーマを変更する
+        if change_theme(theme_name):
             current_theme = theme_name
+        else:
+            current_theme = ""
         
         if current_scale != map_scale:
             # 縮尺を変更する
             map_canvas.zoomScale(map_scale)
             current_scale = map_scale
         
-        create_map_image(image_dict.get(key), map_scale, map_width, map_height, dpi)
+        create_map_image(image_dict.get(key), map_scale, map_width, map_height, dpi, current_theme)
 
     # 状態を復元し仮のテーマを削除する
     restore_from_temp_theme(temp_theme_name, saved_scale)
 
-def create_map_image(filepath: str, map_scale: float, pt_width: float, pt_height: float, dpi: int):
+
+def create_map_image(filepath: str, map_scale: float, pt_width: float, pt_height: float, dpi: int, theme_name:str):
     """
     地図画像を作成する
 
@@ -400,6 +412,7 @@ def create_map_image(filepath: str, map_scale: float, pt_width: float, pt_height
     map_canvas = iface.mapCanvas()
     # 現在の中心座標
     center = map_canvas.center()
+
     # 現在の縮尺
     current_scale = map_canvas.scale()
 
@@ -421,20 +434,86 @@ def create_map_image(filepath: str, map_scale: float, pt_width: float, pt_height
     extent_width /= 2
     extent_height /= 2
 
-    # 中心座標から変換した幅と高さの範囲を産出する
-    extent = QgsRectangle(
-        center.x() - extent_width,
-        center.y() - extent_height,
-        center.x() + extent_width,
-        center.y() + extent_height
-    )
+    # 2023.1.27 測地系の場合のエラー修正 start
+    before_crs = iface.mapCanvas().mapSettings().destinationCrs().authid().replace("EPSG:", "")
+    if map_canvas.mapUnits() == QgsUnitTypes.DistanceDegrees:
+        xy_flg = center.x() > center.y()
+        if xy_flg:
+            center_geometry = QgsGeometry.fromPointXY(QgsPointXY(center.x(), center.y()))
+        else:
+            center_geometry = QgsGeometry.fromPointXY(QgsPointXY(center.y(), center.x())) # xyは逆
+
+        coordwgs84 = QgsCoordinateReferenceSystem(int(before_crs))
+        coordweb = QgsCoordinateReferenceSystem(DEFAULT_CRS)
+        trans =  QgsCoordinateTransform()
+        trans.setSourceCrs(coordwgs84)
+        trans.setDestinationCrs(coordweb)
+        center_geometry.transform(trans)
+        center = center_geometry.asPoint()
+
+        # 中心座標から変換した幅と高さの範囲を産出する
+        extent = QgsRectangle(
+            center.x() - extent_width/1000,
+            center.y() - extent_height/1000,
+            center.x() + extent_width/1000,
+            center.y() + extent_height/1000
+        )
+
+        rect_geom = QgsGeometry.fromRect(extent)
+
+        trans.setSourceCrs(coordweb)
+        trans.setDestinationCrs(coordwgs84)
+        rect_geom.transform(trans)
+
+        rect_polygon = rect_geom.asPolygon()[0]
+        max_x = rect_polygon[0].x()
+        min_x = rect_polygon[0].x()
+        max_y = rect_polygon[0].y()
+        min_y = rect_polygon[0].y()
+
+        for point in rect_polygon:
+            x = point.x()
+            y = point.y()
+
+            if x > max_x:
+                max_x = x
+            if y > max_y:
+                max_y = y
+            if x < min_x:
+                min_x = x
+            if y < min_y:
+                min_y = y
+
+        if xy_flg:
+            extent = QgsRectangle(min_x, min_y, max_x, max_y)
+        else:
+            # xyは逆にして生成
+            extent = QgsRectangle(min_y, min_x, max_y, max_x)
+
+    # 2023.1.27 測地系の場合のエラー修正 end
+    else:
+        # 中心座標から変換した幅と高さの範囲を産出する
+        extent = QgsRectangle(
+            center.x() - extent_width,
+            center.y() - extent_height,
+            center.x() + extent_width,
+            center.y() + extent_height
+        )
 
     # レンダリング設定
+    # 2023.1.27 テーマのレイヤ取得 修正 start
+    project = QgsProject.instance()
+    map_col = project.mapThemeCollection()
+    layers = map_col.mapThemeVisibleLayers(theme_name)
+    if layers == None or len(layers) == 0:
+        layers = map_canvas.layers()
+    # 2023.1.27 テーマのレイヤ取得 修正 end
+
     ms = QgsMapSettings()
-    ms.setLayers(map_canvas.layers())
+    ms.setLayers(layers)
     ms.setOutputDpi(dpi)
     ms.setBackgroundColor(map_canvas.canvasColor())
-    ms.setOutputSize(QtCore.QSize(px_width, px_height))
+    ms.setOutputSize(QtCore.QSize(int(px_width), int(px_height))) # 2023.1.27 WARNING回避
     ms.setExtent(extent)
 
     render = QgsMapRendererParallelJob(ms)
@@ -460,7 +539,7 @@ def change_theme(theme_name: str):
     """
     project = QgsProject.instance()
     col = project.mapThemeCollection()
-    
+
     if not col.hasMapTheme(theme_name):
         # 現プロジェクトに対象の名前のテーマが存在しない場合は実行前の状態で行う
         return False
@@ -522,8 +601,11 @@ def replace_attach(wb, attach_list: list):
         attach_list -- 置換情報リスト
 
       Returns
-        なし
+        True:正常, False:エラーがあり強制終了
     """
+    
+    # 2023.1.19 QDateエラー修正 start
+    ret_flg = True
 
     current_sheet = ""
     for info in attach_list:
@@ -531,10 +613,23 @@ def replace_attach(wb, attach_list: list):
             current_sheet = info.get("sheet")
             ws = wb.Worksheets(current_sheet)
         
-        if info.get("text"):
-            ws.Range(info.get("address")).Value = info.get("text")
-        else:
-            ws.Range(info.get("address")).ClearContents()
+        _address = info.get("address")
+        _str = info.get("text")
+
+        try:
+            # セルに置換した文字列を代入
+            if _str:
+                ws.Range(_address).Value = _str
+            else:
+                ws.Range(_address).ClearContents()
+
+        except Exception as e:
+            iface.messageBar().pushCritical("ERROR", f"セル【{_address}】に【{str(_str)}】は出力できませんでした。")
+            ret_flg = False
+            break
+   
+    return ret_flg
+    # 2023.1.19 QDateエラー修正 end
 
 def insert_images(wb, attach_image_list: list):
     """
@@ -619,7 +714,9 @@ def output_single_report(excel_app, template_path: str, feature: QgsFeature, out
         find_attach_fit_image(wb, attach_image_list, tmpdir, default_scale, dpi)
 
         # 全シートの##Attach::を置換
-        replace_attach(wb, attach_list)
+        ret = replace_attach(wb, attach_list)
+        if(ret == False):
+            return False
 
         # 全シートの##AttachFitImage::に画像を挿入
         insert_images(wb, attach_image_list)
@@ -696,10 +793,12 @@ while True:
     # 出力ファイルディレクトリ（ユーザー指定部）パス取得
     output_path_fixed = get_layer_variable_on_feature(OUTPUT_PATH_FIXED, layer, feature)
     if not output_path_fixed:
+        iface.messageBar().pushCritical("ERROR", f"出力先フォルダが設定されていません。")
         break
     # 出力ファイルディレクトリ（可変部）パス取得
     output_path_variable = get_layer_variable_on_feature(OUTPUT_PATH_VARIABLE, layer, feature)
     if not output_path_variable:
+        iface.messageBar().pushCritical("ERROR", f"出力先フォルダ(可変部)が設定されていません。")
         break
     
     # テンプレートファイルの存在チェック

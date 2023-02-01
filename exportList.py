@@ -27,7 +27,7 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
 from PyQt5.QtWidgets import QAction, QMessageBox, QApplication
 
 # レイヤ変数定義
@@ -110,7 +110,7 @@ def get_layer_variable_evaluated(layer_context_name: str, layer: QgsVectorLayer)
     if not ctx:
         return ""
     exp = create_expression(ctx)
-    if exp is None:
+    if exp is None or exp.evaluate() is None:
         # 単一の文字列を返却する
         return ctx
     
@@ -303,8 +303,21 @@ def insert_list_values(ws, layer: QgsVectorLayer, list_insert_list: list, extent
                 continue
 
             attr_value = feature.attribute(target["name"])
+
             if attr_value:
-                cells_list[row][column] = str(feature.attribute(target["name"]))
+                # 2023.1.19 QDateエラー修正 start
+                # cells_list[row][column] = str(feature.attribute(target["name"]))
+
+                # Excelでエラーに型は文字列に変換する（対象の型：QDate,QTime,QDateTime）
+                if isinstance(attr_value, QDate):
+                    cells_list[row][column] = attr_value.toString("yyyy/MM/dd")
+                elif isinstance(attr_value, QTime):
+                    cells_list[row][column] = attr_value.toString() # フォーマットは不要
+                elif isinstance(attr_value, QDateTime):
+                    cells_list[row][column] = attr_value.toString("yyyy/MM/dd hh:mm:ss")
+                else:
+                    cells_list[row][column] = str(attr_value)
+                # 2023.1.19 QDateエラー修正 end
             else:
                 cells_list[row][column] = None
 
@@ -442,10 +455,12 @@ while True:
     # 出力パス(ユーザー指定部)
     output_path_fixed = get_layer_variable_evaluated(OUTPUT_PATH_FIXED, layer)
     if not output_path_fixed:
+        iface.messageBar().pushCritical("ERROR", f"出力先フォルダが設定されていません。")
         break
     # 出力パス(可変部)
     output_path_variable = get_layer_variable_evaluated(OUTPUT_PATH_VARIABLE, layer)
     if not output_path_variable:
+        iface.messageBar().pushCritical("ERROR", f"出力先フォルダ(可変部)が設定されていません。")
         break
     
     # 出力先フォルダの存在チェック
