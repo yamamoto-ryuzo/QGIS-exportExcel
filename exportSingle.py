@@ -804,6 +804,10 @@ while True:
     # テンプレートファイルの存在チェック
     if not os.path.isabs(template_path):
         template_path = os.path.join(os.path.dirname(QgsProject.instance().fileName()), template_path)
+    else:
+        # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
+        template_path = template_path.replace("\\\\\\\\", "\\\\")
+
     if os.path.exists(template_path) == False:
         iface.messageBar().pushCritical("ERROR", f"テンプレートファイル\n {template_path} \nが見つかりません。")
         break
@@ -814,6 +818,9 @@ while True:
         projectpath  = QgsProject.instance().fileName(); 
         projectdirpath = os.path.dirname(str(projectpath)) ; 
         output_path_fixed = os.path.abspath(os.path.join(projectdirpath, output_path_fixed))
+    else:
+        # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
+        output_path_fixed = output_path_fixed.replace("\\\\\\\\", "\\\\")
     
     if not os.path.exists(output_path_fixed):
         iface.messageBar().pushCritical("ERROR", f"出力先フォルダ\n {output_path_fixed} \nは存在していません。")

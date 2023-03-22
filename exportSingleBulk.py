@@ -860,6 +860,8 @@ while True:
         output_path_fixed_exp = exp.get(OUTPUT_PATH_FIXED)
         for f in features:
             path_ = get_exp_variable_for_feature(output_path_fixed_exp, f)
+            # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
+            path_ = path_.replace("\\\\\\\\", "\\\\")
             if os.path.isdir(path_) == False:
                 iface.messageBar().pushCritical("ERROR", f"出力先フォルダ\n {path_} \nは存在していません。")
                 flg_check_output_folder = False
@@ -870,6 +872,9 @@ while True:
 
     else:
         path_ = raw.get(OUTPUT_PATH_FIXED)
+
+        # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
+        path_ = path_.replace("\\\\\\\\", "\\\\")
         if not os.path.isdir(path_):
             iface.messageBar().pushCritical("ERROR", f"出力先フォルダ\n {path_} \nは存在していません。")
             break
@@ -912,16 +917,20 @@ while True:
         map_canvas.panToFeatureIds(layer, [fid])
         map_canvas.refresh()
 
+        # テンプレート、出力先を取得する
         template_path = get_variable_for_feature(feature, raw, exp, TEMPLATE_PATH)
+        template_path = template_path.replace("\\\\\\\\", "\\\\")
         if output_path_fixed_for_all:
             output_path_fixed = output_path_fixed_for_all
         else:
             output_path_fixed = get_variable_for_feature(feature, raw, exp, OUTPUT_PATH_FIXED)
+            output_path_fixed = output_path_fixed.replace("\\\\\\\\", "\\\\")
 
         # フォルダ存在チェックは実行済み
         output_path_variable = get_variable_for_feature(feature, raw, exp, OUTPUT_PATH_VARIABLE)
         output_path = os.path.join(output_path_fixed, output_path_variable)
 
+        # Excelブックを作成、保存する
         if output_single_report(excel_app, template_path, feature, output_path, dpi, progress) == False:
             excel_result = False
             break
@@ -953,4 +962,4 @@ if flg_refresh:
 map_canvas.setCursor(save_cursor)
 
 if excel_result:
-    QMessageBox.information(iface.mainWindow(), "情報", f"出力完了しました。")
+    QMessageBox.information(iface.mainWindow(), "情報", f"{output_path_fixed}に出力しました。")
