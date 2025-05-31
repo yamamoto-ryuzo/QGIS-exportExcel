@@ -1,6 +1,75 @@
-# QGIS-exportExcel  
-　This repository is intended to build a better QGIS environment and to provide mutual assistance among engineers by the shortage engineers by releasing additional functions of QGIS created by the open source ordered by Soja City and by having as many people as possible contribute programs to extend the functions.  
-　このリポジトリは総社市が発注したオープンソースにより作成されたQGISの追加機能を公開し、多くのユーザーに利用してもらうことで、 機能拡張プログラムの提供をしていただく ことで、よりよいQGIS環境を構築するとともに、不足技術者による技術者間の互助を目的としています。
+# QGIS-exportExcel
+
+このリポジトリは、QGIS からベクターレイヤの属性情報を Excel 帳票として出力するための Python スクリプト群を提供します。
+
+# 各スクリプトの概要
+
+## exportList.py
+- ベクターレイヤの「レイヤスコープ」アクションとして利用する一覧帳票出力用スクリプトです。
+- レイヤ変数でテンプレートパスや出力先ディレクトリを指定し、全地物の情報を Excel テンプレートに出力します。
+- テンプレート内の `##ListInsert::フィールド名` で繰り返し出力が可能です。
+
+### 使用方法
+1. QGISの対象レイヤのレイヤ変数に以下を設定します。
+   - `xlsout_list_template_path` : Excelテンプレートファイルのパス
+   - `xlsout_list_output_path_fixed` : 出力先ディレクトリパス
+   - `xlsout_list_output_path_variable` : 出力ファイル名やサブディレクトリ名（式やフィールド参照も可）
+2. テンプレートExcelに `##ListInsert::フィールド名` を記述します。
+3. レイヤアクションに `exportList.py` を登録し、アクションフィールドとして `[% @layer_id %]` を渡します。
+4. アクション実行で帳票が出力されます。
+
+---
+
+## exportSingle.py
+- ベクターレイヤの「地物スコープ」アクションとして利用する単票（単体）帳票出力用スクリプトです。
+- 選択した1つの地物の属性値を Excel テンプレートに出力します。
+- テンプレート内の `##Attach::フィールド名` で属性値を差し込みます。
+
+### 使用方法
+1. QGISの対象レイヤのレイヤ変数に以下を設定します。
+   - `xlsout_template_path` : Excelテンプレートファイルのパス
+   - `xlsout_output_path_fixed` : 出力先ディレクトリパス
+   - `xlsout_output_path_variable` : 出力ファイル名（式やフィールド参照も可）
+2. テンプレートExcelに `##Attach::フィールド名` を記述します。
+3. レイヤアクションに `exportSingle.py` を登録し、アクションフィールドとして `[% @layer_id %]` `[% $id %]` を渡します。
+4. アクション実行で帳票が出力されます。
+
+---
+
+## exportSingleBulk.py
+- ベクターレイヤの「地物スコープ」アクションとして利用する単票一括出力用スクリプトです。
+- 選択地物または全地物について、個別の Excel ファイルを一括出力します。
+- 画像貼付やテーマ切替、縮尺指定などにも対応しています。
+
+### 使用方法
+1. QGISの対象レイヤのレイヤ変数に以下を設定します。
+   - `xlsout_template_path` : Excelテンプレートファイルのパス
+   - `xlsout_output_path_fixed` : 出力先ディレクトリパス
+   - `xlsout_output_path_variable` : 出力ファイル名（式やフィールド参照も可）
+2. テンプレートExcelに `##Attach::フィールド名` や `##AttachFitImage::テーマ名::縮尺` を記述します。
+3. レイヤアクションに `exportSingleBulk.py` を登録し、アクションフィールドとして `[% @layer_id %]` `[% $id %]` を渡します。
+4. アクション実行で選択地物または全地物分の帳票が一括出力されます。
+
+---
+
+# 共通の使い方
+
+1. QGIS プロジェクトで対象レイヤに必要なレイヤ変数を設定します。
+2. Excel テンプレートファイルを用意し、差し込みたい箇所に `##Attach::フィールド名` や `##ListInsert::フィールド名` を記述します。
+3. レイヤのアクションにスクリプトを登録し、必要なフィールド（例: `[% @layer_id %]`, `[% $id %]`）を渡すようにします。
+4. アクションを実行すると、指定の出力先に Excel 帳票が作成されます。
+
+# 注意事項
+
+- Excel の自動操作には Windows 環境と `win32com.client` が必要です。
+- 出力先ディレクトリは事前に作成しておく必要があります（一部スクリプトでは自動作成）。
+- テンプレートや出力先パスは絶対パス・相対パスどちらも利用可能ですが、パス区切り文字に注意してください（`\\` 推奨）。
+- 画像貼付や地図テーマ切替には QGIS のマップテーマ機能を利用します。
+
+# 参考
+
+- 各スクリプトの先頭コメントや関数コメントも参照してください。
+- QGIS のバージョンや Python 環境によっては動作しない場合があります。
 
 初期バージョンの開発業者：オービタルネット　https://www.orbitalnet.jp/  
 2023/02/01 QDATE,QDATETIMEへの対応しました。
