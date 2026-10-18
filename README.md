@@ -1,3 +1,28 @@
+# export_excel
+
+[QGIS-exportExcel](https://github.com/yamamoto-ryuzo/QGIS-exportExcel) の
+レイヤアクション用スクリプト群を、**QGISプラグインとしてメニューから実行できる**
+ようにした簡易ラッパープラグイン(QGIS Live Harness 組み込み用)。
+
+## 使い方(プラグインとして)
+
+1. 対象のベクターレイヤをアクティブにする(単票出力は地物も選択)
+2. メニュー `プラグイン → export_excel` から実行:
+   - **一覧帳票を出力 (アクティブレイヤ)** — `exportList.py` 相当
+   - **単票を出力 (選択地物)** — `exportSingle.py` 相当(選択地物ごとに実行)
+   - **単票を一括出力 (選択地物または全地物)** — `exportSingleBulk.py` 相当
+3. レイヤ変数(`xlsout_*`)の設定方法は下記の upstream 説明と同じ
+
+実行時に `[% @layer_id %]`(アクティブレイヤ)/`[% $id %]`(選択地物)を自動置換する。
+スクリプト本体は upstream 無改変で同梱し、exec直前に `PyQt5`→`qgis.PyQt`、
+`Qt.WaitCursor`→`Qt.CursorShape.WaitCursor` の Qt6 向け書き換えのみ行う。
+
+**前提**: `win32com`(pywin32)と Excel がインストール済みであること。
+
+---
+
+以下は upstream (QGIS-exportExcel) のREADMEです。
+
 # QGIS-exportExcel
 
 このリポジトリは、QGIS からベクターレイヤの属性情報を Excel 帳票として出力するための Python スクリプト群を提供します。

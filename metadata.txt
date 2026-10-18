@@ -1,0 +1,20 @@
+[general]
+name=export_excel
+qgisMinimumVersion=3.40
+qgisMaximumVersion=4.99
+description=ベクターレイヤの属性情報をExcel帳票として出力するスクリプト群(QGIS-exportExcel)の簡易プラグインラッパー
+about=QGIS-exportExcel (https://github.com/yamamoto-ryuzo/QGIS-exportExcel) のレイヤアクション用スクリプト(exportList/exportSingle/exportSingleBulk)を、プラグインメニューからアクティブレイヤ・選択地物に対して実行します。実行にはレイヤ変数(xlsout_*)とwin32com(pywin32)及びExcelが必要です。
+version=1.0.0
+author=yamamoto_ryuzo
+email=ryu@yamakun.net
+tracker=https://github.com/yamamoto-ryuzo/QGIS-exportExcel/issues
+repository=https://github.com/yamamoto-ryuzo/QGIS-exportExcel
+hasProcessingProvider=no
+changelog=
+    Version 1.0.0:
+    - スクリプト群をプラグイン化し、プラグインメニューから実行可能にした
+tags=python,excel,report,action
+experimental=False
+deprecated=False
+server=False
+supportsQt6=True
