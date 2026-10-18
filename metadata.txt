@@ -1,18 +1,33 @@
 [general]
-name=export_excel
-qgisMinimumVersion=3.40
+name=geo_excel
+qgisMinimumVersion=4.0
 qgisMaximumVersion=4.99
 description=ベクターレイヤの属性情報をExcel帳票として出力するスクリプト群(QGIS-exportExcel)の簡易プラグインラッパー
 about=QGIS-exportExcel (https://github.com/yamamoto-ryuzo/QGIS-exportExcel) のレイヤアクション用スクリプト(exportList/exportSingle/exportSingleBulk)を、プラグインメニューからアクティブレイヤ・選択地物に対して実行します。実行にはレイヤ変数(xlsout_*)とwin32com(pywin32)及びExcelが必要です。
-version=1.0.0
-author=yamamoto_ryuzo
+version=1.5.0
+author=yamamoto-ryuzo
 email=ryu@yamakun.net
-tracker=https://github.com/yamamoto-ryuzo/QGIS-exportExcel/issues
-repository=https://github.com/yamamoto-ryuzo/QGIS-exportExcel
+homepage=https://github.com/yamamoto-ryuzo/qgis_live_harness/tree/master/qgis-plugin/geo_excel
+tracker=https://github.com/yamamoto-ryuzo/qgis_live_harness/issues
+repository=https://github.com/yamamoto-ryuzo/qgis_live_harness/tree/master/qgis-plugin/geo_excel
 hasProcessingProvider=no
 changelog=
+    Version 1.5.0:
+    - 翻訳カタログに de/es/fr/hi/it/pt/ru/zh を追加(全9言語を同梱)
+    Version 1.4.0:
+    - 国際化(i18n)対応(UI文字列を英語ソース化・QTranslatorでja.qmロード)
+    Version 1.3.0:
+    - 対応バージョンをQGIS4以降に更新(qgisMinimumVersion=4.0)
+    Version 1.2.0:
+    - AI/外部制御用ブリッジ(bridge.py)を追加。qgis_live_driver の
+      bridge_call / describe_plugins から listScripts / layerVariables /
+      setLayerVariables / run / status を呼べるようになった
+    Version 1.1.0:
+    - プラグインIDを export_excel から geo_excel に改名
     Version 1.0.0:
     - スクリプト群をプラグイン化し、プラグインメニューから実行可能にした
+icon=icon.png
+license=GPL-3.0
 tags=python,excel,report,action
 experimental=False
 deprecated=False

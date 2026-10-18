@@ -1,100 +1,150 @@
-# export_excel
+# geo_excel
 
-[QGIS-exportExcel](https://github.com/yamamoto-ryuzo/QGIS-exportExcel) の
-レイヤアクション用スクリプト群を、**QGISプラグインとしてメニューから実行できる**
-ようにした簡易ラッパープラグイン(QGIS Live Harness 組み込み用)。
+[Japanese / 日本語: `README_JP.md`](README_JP.md)
 
-## 使い方(プラグインとして)
+A lightweight wrapper plugin that makes the layer-action scripts from
+[QGIS-exportExcel](https://github.com/yamamoto-ryuzo/QGIS-exportExcel)
+**runnable from the QGIS plugin menu** (built for QGIS Live Harness).
 
-1. 対象のベクターレイヤをアクティブにする(単票出力は地物も選択)
-2. メニュー `プラグイン → export_excel` から実行:
-   - **一覧帳票を出力 (アクティブレイヤ)** — `exportList.py` 相当
-   - **単票を出力 (選択地物)** — `exportSingle.py` 相当(選択地物ごとに実行)
-   - **単票を一括出力 (選択地物または全地物)** — `exportSingleBulk.py` 相当
-3. レイヤ変数(`xlsout_*`)の設定方法は下記の upstream 説明と同じ
+## Usage (as a plugin)
 
-実行時に `[% @layer_id %]`(アクティブレイヤ)/`[% $id %]`(選択地物)を自動置換する。
-スクリプト本体は upstream 無改変で同梱し、exec直前に `PyQt5`→`qgis.PyQt`、
-`Qt.WaitCursor`→`Qt.CursorShape.WaitCursor` の Qt6 向け書き換えのみ行う。
+1. Activate the target vector layer (select features for single-record output).
+2. Run from the menu `Plugins → geo_excel`:
+   - **Export list report (active layer)** — equivalent of `exportList.py`
+   - **Export single record (selected feature)** — equivalent of
+     `exportSingle.py` (runs per selected feature)
+   - **Export single records in bulk (selected or all features)** — equivalent
+     of `exportSingleBulk.py`
+3. Layer variables (`xlsout_*`) are configured the same way as described in
+   the upstream documentation below.
 
-**前提**: `win32com`(pywin32)と Excel がインストール済みであること。
+At execution time, `[% @layer_id %]` (active layer) and `[% $id %]` (selected
+feature) are substituted automatically. The script bodies are bundled
+unmodified from upstream; only Qt6 rewrites (`PyQt5`→`qgis.PyQt`,
+`Qt.WaitCursor`→`Qt.CursorShape.WaitCursor`) are applied just before exec.
+
+**Prerequisites**: `win32com` (pywin32) and Excel must be installed.
+
+## AI/external control API (bridge)
+
+Via `plugins['geo_excel'].bridge` (`GeoExcelBridge`), the plugin can be
+operated from QGIS Live Driver's `bridge_call` / `describe_plugins`
+(MCP `qgis_bridge_call`, REST, AI assistant panel). Methods return JSON
+strings:
+
+- `pluginInfo()` / `status()` — self-description / runtime state (active
+  layer, selection count, win32com availability, variable configuration)
+- `listScripts()` — list of report scripts (id/file/requires selection/
+  required layer variables)
+- `layerVariables(layer_id)` / `setLayerVariables(vars, layer_id)` —
+  get/set `xlsout_*`/`dpi` layer variables
+- `run(script, feature_id=None, confirm=False)` — run a report.
+  `script` accepts `list`/`single`/`bulk`/filename/index. `single` uses the
+  selected feature or `feature_id`. Modal QMessageBoxes inside the scripts
+  are auto-replied only during execution; `confirm=True` answers Ok to
+  overwrite/continue prompts (default False = abort). Returns the execution
+  result (`excel_result`/`output_path`) and collected messages. Blocks the
+  GUI thread while Excel is generating.
+
+Example: `qgis_bridge_call pluginId="geo_excel" method="run" args=["list", null, true]`
 
 ---
 
-以下は upstream (QGIS-exportExcel) のREADMEです。
+Below is the upstream (QGIS-exportExcel) README.
 
 # QGIS-exportExcel
 
-このリポジトリは、QGIS からベクターレイヤの属性情報を Excel 帳票として出力するための Python スクリプト群を提供します。
+This repository provides Python scripts for exporting vector layer
+attribute information from QGIS as Excel reports.
 
-# 各スクリプトの概要
+# Script overview
 
 ## exportList.py
-- ベクターレイヤの「レイヤスコープ」アクションとして利用する一覧帳票出力用スクリプトです。
-- レイヤ変数でテンプレートパスや出力先ディレクトリを指定し、全地物の情報を Excel テンプレートに出力します。
-- テンプレート内の `##ListInsert::フィールド名` で繰り返し出力が可能です。
+- A script for exporting a list report, used as a "layer scope" action on a
+  vector layer.
+- Specify the template path and output directory via layer variables;
+  information for all features is written to an Excel template.
+- `##ListInsert::<field name>` inside the template enables repeated output.
 
-### 使用方法
-1. QGISの対象レイヤのレイヤ変数に以下を設定します。
-   - `xlsout_list_template_path` : Excelテンプレートファイルのパス
-   - `xlsout_list_output_path_fixed` : 出力先ディレクトリパス
-   - `xlsout_list_output_path_variable` : 出力ファイル名やサブディレクトリ名（式やフィールド参照も可）
-2. テンプレートExcelに `##ListInsert::フィールド名` を記述します。
-3. レイヤアクションに `exportList.py` を登録し、アクションフィールドとして `[% @layer_id %]` を渡します。
-4. アクション実行で帳票が出力されます。
+### Usage
+1. Set the following layer variables on the target layer in QGIS:
+   - `xlsout_list_template_path`: path to the Excel template file
+   - `xlsout_list_output_path_fixed`: output directory path
+   - `xlsout_list_output_path_variable`: output file name or subdirectory
+     name (expressions and field references allowed)
+2. Write `##ListInsert::<field name>` in the template Excel file.
+3. Register `exportList.py` as a layer action, passing `[% @layer_id %]` as
+   the action field.
+4. Running the action exports the report.
 
 ---
 
 ## exportSingle.py
-- ベクターレイヤの「地物スコープ」アクションとして利用する単票（単体）帳票出力用スクリプトです。
-- 選択した1つの地物の属性値を Excel テンプレートに出力します。
-- テンプレート内の `##Attach::フィールド名` で属性値を差し込みます。
+- A script for exporting a single-record report, used as a "feature scope"
+  action on a vector layer.
+- Writes the attribute values of one selected feature into an Excel
+  template.
+- `##Attach::<field name>` inside the template inserts attribute values.
 
-### 使用方法
-1. QGISの対象レイヤのレイヤ変数に以下を設定します。
-   - `xlsout_template_path` : Excelテンプレートファイルのパス
-   - `xlsout_output_path_fixed` : 出力先ディレクトリパス
-   - `xlsout_output_path_variable` : 出力ファイル名（式やフィールド参照も可）
-2. テンプレートExcelに `##Attach::フィールド名` を記述します。
-3. レイヤアクションに `exportSingle.py` を登録し、アクションフィールドとして `[% @layer_id %]` `[% $id %]` を渡します。
-4. アクション実行で帳票が出力されます。
+### Usage
+1. Set the following layer variables on the target layer in QGIS:
+   - `xlsout_template_path`: path to the Excel template file
+   - `xlsout_output_path_fixed`: output directory path
+   - `xlsout_output_path_variable`: output file name (expressions and field
+     references allowed)
+2. Write `##Attach::<field name>` in the template Excel file.
+3. Register `exportSingle.py` as a layer action, passing `[% @layer_id %]`
+   and `[% $id %]` as action fields.
+4. Running the action exports the report.
 
 ---
 
 ## exportSingleBulk.py
-- ベクターレイヤの「地物スコープ」アクションとして利用する単票一括出力用スクリプトです。
-- 選択地物または全地物について、個別の Excel ファイルを一括出力します。
-- 画像貼付やテーマ切替、縮尺指定などにも対応しています。
+- A script for bulk export of single-record reports, used as a "feature
+  scope" action on a vector layer.
+- Exports individual Excel files for selected features or all features at
+  once.
+- Also supports image embedding, theme switching, and scale specification.
 
-### 使用方法
-1. QGISの対象レイヤのレイヤ変数に以下を設定します。
-   - `xlsout_template_path` : Excelテンプレートファイルのパス
-   - `xlsout_output_path_fixed` : 出力先ディレクトリパス
-   - `xlsout_output_path_variable` : 出力ファイル名（式やフィールド参照も可）
-2. テンプレートExcelに `##Attach::フィールド名` や `##AttachFitImage::テーマ名::縮尺` を記述します。
-3. レイヤアクションに `exportSingleBulk.py` を登録し、アクションフィールドとして `[% @layer_id %]` `[% $id %]` を渡します。
-4. アクション実行で選択地物または全地物分の帳票が一括出力されます。
+### Usage
+1. Set the following layer variables on the target layer in QGIS:
+   - `xlsout_template_path`: path to the Excel template file
+   - `xlsout_output_path_fixed`: output directory path
+   - `xlsout_output_path_variable`: output file name (expressions and field
+     references allowed)
+2. Write `##Attach::<field name>` or
+   `##AttachFitImage::<theme name>::<scale>` in the template Excel file.
+3. Register `exportSingleBulk.py` as a layer action, passing
+   `[% @layer_id %]` and `[% $id %]` as action fields.
+4. Running the action bulk-exports reports for selected or all features.
 
 ---
 
-# 共通の使い方
+# Common usage
 
-1. QGIS プロジェクトで対象レイヤに必要なレイヤ変数を設定します。
-2. Excel テンプレートファイルを用意し、差し込みたい箇所に `##Attach::フィールド名` や `##ListInsert::フィールド名` を記述します。
-3. レイヤのアクションにスクリプトを登録し、必要なフィールド（例: `[% @layer_id %]`, `[% $id %]`）を渡すようにします。
-4. アクションを実行すると、指定の出力先に Excel 帳票が作成されます。
+1. Set the required layer variables on the target layer in your QGIS
+   project.
+2. Prepare an Excel template file and write `##Attach::<field name>` or
+   `##ListInsert::<field name>` where you want values inserted.
+3. Register a script as a layer action and pass the required fields
+   (e.g. `[% @layer_id %]`, `[% $id %]`).
+4. Running the action creates an Excel report at the specified output
+   location.
 
-# 注意事項
+# Notes
 
-- Excel の自動操作には Windows 環境と `win32com.client` が必要です。
-- 出力先ディレクトリは事前に作成しておく必要があります（一部スクリプトでは自動作成）。
-- テンプレートや出力先パスは絶対パス・相対パスどちらも利用可能ですが、パス区切り文字に注意してください（`\\` 推奨）。
-- 画像貼付や地図テーマ切替には QGIS のマップテーマ機能を利用します。
+- Excel automation requires a Windows environment and `win32com.client`.
+- The output directory must be created beforehand (some scripts create it
+  automatically).
+- Template and output paths may be absolute or relative, but mind the path
+  separators (`\\` recommended).
+- Image embedding and map theme switching use QGIS's map theme feature.
 
-# 参考
+# See also
 
-- 各スクリプトの先頭コメントや関数コメントも参照してください。
-- QGIS のバージョンや Python 環境によっては動作しない場合があります。
+- See the comments at the top of each script and the function comments.
+- Depending on the QGIS version or Python environment, the scripts may not
+  work.
 
-初期バージョンの開発業者：オービタルネット　https://www.orbitalnet.jp/  
-2023/02/01 QDATE,QDATETIMEへの対応しました。
+Initial development: OrbitalNet — https://www.orbitalnet.jp/
+2023/02/01 Added support for QDATE and QDATETIME.

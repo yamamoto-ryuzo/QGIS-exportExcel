@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""export_excel - Excel帳票出力スクリプト群の簡易プラグインラッパー"""
+"""geo_excel - Excel帳票出力スクリプト群の簡易プラグインラッパー"""
 
 
 def classFactory(iface):  # pylint: disable=invalid-name
