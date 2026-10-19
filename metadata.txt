@@ -4,7 +4,7 @@ qgisMinimumVersion=4.0
 qgisMaximumVersion=4.99
 description=ベクターレイヤの属性情報をExcel帳票として出力するスクリプト群(QGIS-exportExcel)の簡易プラグインラッパー
 about=QGIS-exportExcel (https://github.com/yamamoto-ryuzo/QGIS-exportExcel) のレイヤアクション用スクリプト(exportList/exportSingle/exportSingleBulk)を、プラグインメニューからアクティブレイヤ・選択地物に対して実行します。実行にはレイヤ変数(xlsout_*)とwin32com(pywin32)及びExcelが必要です。
-version=1.5.0
+version=1.8.0
 author=yamamoto-ryuzo
 email=ryu@yamakun.net
 homepage=https://github.com/yamamoto-ryuzo/qgis_live_harness/tree/master/qgis-plugin/geo_excel
@@ -12,6 +12,16 @@ tracker=https://github.com/yamamoto-ryuzo/qgis_live_harness/issues
 repository=https://github.com/yamamoto-ryuzo/qgis_live_harness/tree/master/qgis-plugin/geo_excel
 hasProcessingProvider=no
 changelog=
+    Version 1.6.0:
+    - 設定ダイアログを追加(メニュー Settings...)。
+      環境チェック(win32com/Excel登録/出力先)・必要物の列挙・
+      既定値(QSettings)とレイヤ変数の編集・既定値適用を1画面に集約
+    - 既定の出力先を <ドキュメント>/geo_excel に汎用化
+      (QStandardPaths.DocumentsLocation。QSettingsで変更可)
+    - 実行時に不足しているレイヤ変数(xlsout_*)を既定値で自動適用
+      (出力先フォルダ自動作成・未指定テンプレートはレイヤの
+      フィールドから最小限のxlsx雛形を自動生成。設定で無効化可)
+    - bridgeに settings / applyDefaults / checkExcel / openSettings を追加
     Version 1.5.0:
     - 翻訳カタログに de/es/fr/hi/it/pt/ru/zh を追加(全9言語を同梱)
     Version 1.4.0:

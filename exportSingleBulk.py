@@ -25,7 +25,7 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 
-from PyQt5.QtCore import Qt, QDate, QTime, QDateTime
+from PyQt5.QtCore import Qt, QDate, QTime, QDateTime, QCoreApplication
 from PyQt5.QtWidgets import QAction, QMessageBox, QApplication, QProgressDialog
 
 # mmへ単位変換する際に使用
@@ -59,10 +59,109 @@ def get_layer_variable(layer_context_name: str, layer: QgsVectorLayer):
       未定義の場合、メッセージバーにエラーを表示し、空白を返却する。
     """
     if not QgsExpressionContextScope.hasVariable(QgsExpressionContextUtils.layerScope(layer), layer_context_name):
-        iface.messageBar().pushCritical("ERROR", f"{layer_context_name} is not defined!")
+        iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "{0} is not defined!").format(layer_context_name))
         return ""
 
     return QgsExpressionContextScope.variable(QgsExpressionContextUtils.layerScope(layer), layer_context_name)
+
+def make_expression_context(layer: QgsVectorLayer = None, feature: QgsFeature = None):
+    """
+    式評価用のコンテキストを作成する。
+
+    グローバル・プロジェクト・レイヤの各スコープと地物を設定するため、
+    @layer_id や @project_folder などの @変数や、属性テーブルの
+    詳細フィルター（式）で利用できる式がそのまま使える。
+    引数省略時はスクリプト実行時のグローバル layer / feature を使用する。
+
+    Parameters
+      layer -- レイヤ（レイヤスコープを追加する場合に指定）
+      feature -- 地物（地物スコープの式を評価する場合に指定）
+
+    Returns
+      QgsExpressionContext
+    """
+    if layer is None:
+        layer = globals().get('layer')
+    if feature is None:
+        feature = globals().get('feature')
+
+    context = QgsExpressionContext()
+    try:
+        context.appendScope(QgsExpressionContextUtils.globalScope())
+    except Exception:
+        pass
+    try:
+        context.appendScope(QgsExpressionContextUtils.projectScope(QgsProject.instance()))
+    except Exception:
+        pass
+    try:
+        if layer is not None:
+            context.appendScope(QgsExpressionContextUtils.layerScope(layer))
+    except Exception:
+        pass
+    if feature is not None:
+        try:
+            context.setFields(feature.fields())
+        except Exception:
+            pass
+        context.setFeature(feature)
+    return context
+
+def excel_value_text(value):
+    """
+    評価結果をExcel出力用の値に変換する。
+
+    Excelでエラーになる型は文字列に変換する（対象の型：QDate,QTime,QDateTime）
+
+    Parameters
+      value -- 評価結果
+    """
+    if isinstance(value, QDate):
+        return value.toString("yyyy/MM/dd")
+    if isinstance(value, QTime):
+        return value.toString() # フォーマットは不要
+    if isinstance(value, QDateTime):
+        return value.toString("yyyy/MM/dd hh:mm:ss")
+    return value
+
+def evaluate_attach_text(text: str, layer: QgsVectorLayer = None, feature: QgsFeature = None):
+    """
+    ##Attach:: の後に続く指定文字列を評価して結果を返却する。
+
+    フィールド名に一致しない場合は式として評価する。
+    式には属性テーブルの詳細フィルター（式）と同等の記述や
+    @変数（@layer_id 等）が利用できる。
+
+    Parameters
+      text -- フィールド名または式
+      layer -- レイヤ
+      feature -- 地物
+
+    Returns
+      評価結果。フィールドにも式にも一致しない場合は空白を返却する。
+    """
+    if layer is None:
+        layer = globals().get('layer')
+    if feature is None:
+        feature = globals().get('feature')
+    if layer is None or feature is None:
+        return ""
+    try:
+        if feature.fieldNameIndex(text) >= 0:
+            return excel_value_text(feature.attribute(text))
+    except Exception:
+        pass
+    try:
+        exp = QgsExpression(text)
+        if exp.hasParserError():
+            return ""
+        context = make_expression_context(layer, feature)
+        value = exp.evaluate(context)
+        if exp.hasEvalError():
+            return ""
+        return excel_value_text(value)
+    except Exception:
+        return ""
 
 def create_expression(text: str):
     """
@@ -95,49 +194,51 @@ def create_expression(text: str):
             return None
         
         if exp.hasEvalError():
-            iface.messageBar().pushCritical("ERROR", f"{text} has eval error:{exp.evalErrorString()}")
+            iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "{0} has eval error: {1}").format(text, exp.evalErrorString()))
             return None
 
         if exp.hasParserError():
-            iface.messageBar().pushCritical("ERROR", f"{text} has parser error:{exp.parserErrorString()}")
+            iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "{0} has parser error: {1}").format(text, exp.parserErrorString()))
             return None
 
         return exp
 
-def variable_based_on_feature(text: str, feature: QgsFeature):
+def variable_based_on_feature(text: str, feature: QgsFeature, layer: QgsVectorLayer = None):
     """
     地物の属性値を使用して文字列を作成
 
     Parameters
       text -- 文字列
       feature -- 地物
+      layer -- レイヤ（省略時はグローバルのlayer）
 
     Returns
       引数の文字列が式を含んでいる場合、地物の属性値等を使用して新しい文字列を作成する。
+      @変数（@layer_id 等）や詳細フィルター（式）と同等の式が利用できる。
       式を含んでいない場合は引数の文字列をそのまま返却する。
     """
     exp = create_expression(text)
     if exp is None:
         return text
-        
-    context = QgsExpressionContext()
-    context.setFeature(feature)
+
+    context = make_expression_context(layer, feature)
     return exp.evaluate(context)
 
-def get_exp_variable_for_feature(exp: QgsExpression, feature: QgsFeature):
+def get_exp_variable_for_feature(exp: QgsExpression, feature: QgsFeature, layer: QgsVectorLayer = None):
     """
     指定の式に地物を設定し、評価した結果を返却する
 
       Parameters
         exp -- 式
         feature -- 地物
+        layer -- レイヤ（省略時はグローバルのlayer）
 
       Returns
         評価結果
+        （グローバル・プロジェクト・レイヤスコープの @変数が利用可能）
     """
 
-    context = QgsExpressionContext()
-    context.setFeature(feature)
+    context = make_expression_context(layer, feature)
     return exp.evaluate(context)
 
 def contains_text_in_first_cell(ws, text: str):
@@ -183,12 +284,14 @@ def append_attach(ws, cell, attach_list: list):
             # 2023.1.19 QDateエラー修正 end
 
         else:
-            text_info["text"] = ""
+            # フィールド名に一致しない場合は式として評価する
+            # （属性テーブルの詳細フィルター（式）と同等の記述・@変数が利用可能）
+            text_info["text"] = evaluate_attach_text(attach_info[1], layer, feature)
         attach_list.append(text_info)
 
 def find_attach(wb, feature: QgsFeature, attach_list: list):
     """
-    指定ブックの全てのシート内から「##Attach::（地物属性名）」文字列を検索し、その情報をリストに登録。
+    指定ブックの全てのシート内から「##Attach::（地物属性名または式）」文字列を検索し、その情報をリストに登録。
     この処理では地物から属性値をリストに登録するのみでセル値は置換しない。
 
     Parameters
@@ -610,7 +713,7 @@ def replace_attach(wb, attach_list: list):
                 ws.Range(_address).ClearContents()
 
         except Exception as e:
-            iface.messageBar().pushCritical("ERROR", f"セル【{_address}】に【{str(_str)}】は出力できませんでした。")
+            iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Could not output [{1}] to cell [{0}].").format(_address, str(_str)))
             ret_flg = False
             break
    
@@ -679,7 +782,7 @@ def output_single_report(excel_app, template_path: str, feature: QgsFeature, out
 
     QApplication.processEvents()
     if progress.wasCanceled():
-        cancel_return = QMessageBox.question(iface.mainWindow(), "確認", "処理を中止しますか。", QMessageBox.Ok, QMessageBox.Cancel)
+        cancel_return = QMessageBox.question(iface.mainWindow(), QCoreApplication.translate("geo_excel", "Confirmation"), QCoreApplication.translate("geo_excel", "Abort processing?"), QMessageBox.Ok, QMessageBox.Cancel)
         if cancel_return == QMessageBox.Ok:
             return False
         progress.reset()
@@ -725,7 +828,7 @@ def output_single_report(excel_app, template_path: str, feature: QgsFeature, out
         wb.Close()
 
     except Exception as e:
-        iface.messageBar().pushCritical("ERROR", f"エラー発生: {e}")
+        iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "An error occurred: {0}").format(e))
         success = False
         
     finally:
@@ -748,15 +851,15 @@ def get_raw_variable_for_layer(layer: QgsVectorLayer):
     raw = {}
     template_path = get_layer_variable(TEMPLATE_PATH, layer)
     if not template_path:
-        iface.messageBar().pushCritical("ERROR", f"レイヤ変数'template_path'が未設定です")
+        iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Layer variable '{0}' is not set.").format(TEMPLATE_PATH))
         return None
     output_path_fixed = get_layer_variable(OUTPUT_PATH_FIXED, layer)
     if not output_path_fixed:
-        iface.messageBar().pushCritical("ERROR", f"レイヤ変数'output_path'が未設定です")
+        iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Layer variable '{0}' is not set.").format(OUTPUT_PATH_FIXED))
         return None
     output_path_variable = get_layer_variable(OUTPUT_PATH_VARIABLE, layer)
     if not output_path_variable:
-        iface.messageBar().pushCritical("ERROR", f"レイヤ変数'output_path_variable'が未設定です")
+        iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Layer variable '{0}' is not set.").format(OUTPUT_PATH_VARIABLE))
         return None
 
     raw[TEMPLATE_PATH] = template_path
@@ -808,8 +911,7 @@ def get_variable_for_feature(feature: QgsFeature, raw: dict, exp: dict, variable
     
     target_exp = exp.get(variable_name)
 
-    context = QgsExpressionContext()
-    context.setFeature(feature)
+    context = make_expression_context(None, feature)
     return target_exp.evaluate(context)
 
 
@@ -839,12 +941,12 @@ while True:
     if dpi_raw:
         # dpiがレイヤ変数に正しく設定されていたら数値変換する
         if not dpi_raw.isdecimal():
-            iface.messageBar().pushCritical("ERROR", f"レイヤ変数 dpi が正しくありません。")
+            iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Layer variable dpi is invalid."))
             break
         dpi = int(dpi_raw)
     else:
         dpi = 200
-        QgsMessageLog.logMessage(f"dpi={dpi}として処理します。")
+        QgsMessageLog.logMessage(f"Using dpi={dpi}.")
 
     raw = get_raw_variable_for_layer(layer)
     if not raw:
@@ -863,7 +965,7 @@ while True:
             # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
             path_ = path_.replace("\\\\\\\\", "\\\\")
             if os.path.isdir(path_) == False:
-                iface.messageBar().pushCritical("ERROR", f"出力先フォルダ\n {path_} \nは存在していません。")
+                iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Output folder\n {0} \ndoes not exist.").format(path_))
                 flg_check_output_folder = False
                 break
         
@@ -876,11 +978,11 @@ while True:
         # 絶対パスの場合、先頭が\\\\では認識しないため、\\に変換する
         path_ = path_.replace("\\\\\\\\", "\\\\")
         if not os.path.isdir(path_):
-            iface.messageBar().pushCritical("ERROR", f"出力先フォルダ\n {path_} \nは存在していません。")
+            iface.messageBar().pushCritical("ERROR", QCoreApplication.translate("geo_excel", "Output folder\n {0} \ndoes not exist.").format(path_))
             break
         output_path_fixed_for_all = path_
 
-    msg_return = QMessageBox.question(iface.mainWindow(), "確認", f'{featureCount}件の帳票出力を開始します。\n時間がかかりますが処理を続行しますか。', QMessageBox.Ok, QMessageBox.Cancel)
+    msg_return = QMessageBox.question(iface.mainWindow(), QCoreApplication.translate("geo_excel", "Confirmation"), QCoreApplication.translate("geo_excel", "Starting export of {0} reports.\nThis may take a while. Continue?").format(featureCount), QMessageBox.Ok, QMessageBox.Cancel)
     if msg_return == QMessageBox.Cancel:
         break
     
@@ -894,7 +996,7 @@ while True:
     excel_app.ScreenUpdating = False
 
     # 進捗ダイアログ表示
-    progress = QProgressDialog("帳票出力中...", "キャンセル", 0, featureCount, iface.mainWindow())
+    progress = QProgressDialog(QCoreApplication.translate("geo_excel", "Exporting reports..."), QCoreApplication.translate("geo_excel", "Cancel"), 0, featureCount, iface.mainWindow())
     progress.setAutoClose(True)
     progress.setValue(0)
 
@@ -962,4 +1064,4 @@ if flg_refresh:
 map_canvas.setCursor(save_cursor)
 
 if excel_result:
-    QMessageBox.information(iface.mainWindow(), "情報", f"{output_path_fixed}に出力しました。")
+    QMessageBox.information(iface.mainWindow(), QCoreApplication.translate("geo_excel", "Information"), QCoreApplication.translate("geo_excel", "Exported to {0}.").format(output_path_fixed))
